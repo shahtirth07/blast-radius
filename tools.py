@@ -7,10 +7,20 @@ import memory
 
 
 EVENTS = []
+REPORT_SAVED = False
+GRAPH_PATCHED = False
 
 
 def add_event(text):
     EVENTS.append(text)
+
+
+def clear_run_flags():
+    global REPORT_SAVED
+    global GRAPH_PATCHED
+    EVENTS.clear()
+    REPORT_SAVED = False
+    GRAPH_PATCHED = False
 
 
 @tool
@@ -80,7 +90,9 @@ def save_report(mermaid_graph: str, summary: str, graph_json: str = "") -> str:
     Each node needs id, label, status (broken|risk|fine), source, reason, severity.
     Include every FINE item too.
     """
+    global REPORT_SAVED
     add_event("Saving blast radius report")
+    REPORT_SAVED = True
 
     html = """<!doctype html><html><head><meta charset="utf-8">
 <title>Blast Radius</title>
@@ -135,3 +147,99 @@ classDef fine fill:#eaf3de,stroke:#3b6d11,color:#173404
             f.write(graph_json)
 
     return "Report saved: " + html_path
+
+
+def recompute_score(nodes):
+    has_high_broken = False
+    has_broken_or_risk = False
+    i = 0
+    while i < len(nodes):
+        node = nodes[i]
+        status = node.get("status", "")
+        if status == "at_risk" or status == "at-risk":
+            status = "risk"
+        severity = node.get("severity", "")
+        if status == "broken" and severity == "high":
+            has_high_broken = True
+        if status == "broken" or status == "risk":
+            has_broken_or_risk = True
+        i = i + 1
+    if has_high_broken:
+        return "HIGH"
+    if has_broken_or_risk:
+        return "MEDIUM"
+    return "LOW"
+
+
+@tool
+def update_nodes(changes_json: str) -> str:
+    """Patch existing nodes in reports/graph.json. Does not add or remove nodes.
+    changes_json: JSON list like
+    [{"id":"raj_pr","status":"fine","reason":"Lena can approve releases now"}]
+    Pass [] if nothing changes.
+    """
+    global GRAPH_PATCHED
+    import json
+
+    add_event("Updating graph nodes")
+    GRAPH_PATCHED = True
+
+    graph_path = os.path.join("reports", "graph.json")
+    if not os.path.exists(graph_path):
+        add_event("No graph.json to update")
+        return "No graph.json found"
+
+    with open(graph_path, "r") as f:
+        raw = f.read()
+    if raw.strip() == "":
+        add_event("graph.json is empty")
+        return "graph.json is empty"
+
+    data = json.loads(raw)
+    nodes = data.get("nodes", [])
+    if changes_json.strip() == "":
+        changes = []
+    else:
+        changes = json.loads(changes_json)
+
+    if changes is None:
+        changes = []
+
+    changed_ids = []
+    c = 0
+    while c < len(changes):
+        change = changes[c]
+        target_id = change.get("id", "")
+        found = False
+        n = 0
+        while n < len(nodes):
+            node = nodes[n]
+            if node.get("id") == target_id:
+                found = True
+                if "status" in change:
+                    status = change.get("status", "")
+                    if status == "at_risk" or status == "at-risk" or status == "AT RISK":
+                        status = "risk"
+                    if status == "BROKEN":
+                        status = "broken"
+                    if status == "FINE":
+                        status = "fine"
+                    node["status"] = status
+                if "reason" in change:
+                    node["reason"] = change.get("reason", "")
+                changed_ids.append(target_id)
+                add_event("Updated node " + target_id)
+            n = n + 1
+        if not found:
+            add_event("Unknown node id skipped: " + str(target_id))
+        c = c + 1
+
+    data["nodes"] = nodes
+    data["score"] = recompute_score(nodes)
+
+    with open(graph_path, "w") as f:
+        f.write(json.dumps(data))
+
+    if len(changed_ids) == 0:
+        return "No nodes changed"
+    return "Changed nodes: " + ", ".join(changed_ids)

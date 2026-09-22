@@ -4,7 +4,14 @@ import asyncio
 from dotenv import load_dotenv
 from strands import Agent
 import memory
-from tools import recall_memory, save_correction, check_flight, draft_email, save_report
+from tools import (
+    recall_memory,
+    save_correction,
+    check_flight,
+    draft_email,
+    save_report,
+    update_nodes,
+)
 
 load_dotenv()
 
@@ -34,14 +41,29 @@ How you work:
     "edges":[{"from","to"}], "score":"HIGH|MEDIUM|LOW", "confidence":"high|medium|low",
     "recommendation":"one sentence"}
    Include every node you labeled, including FINE items. Give each node a reason and source.
+   Use these stable ids when they apply:
+   flight, northwind, signing, pricing, board, pr, qa, gonogo, acme, lease, dinner.
+   For a delayed Thursday flight AS 331, you MUST include BOTH chains plus FINE controls:
+   - Money: flight -> northwind -> signing -> pricing -> board
+   - Product: flight -> pr -> qa -> gonogo -> acme
+   - FINE: lease, dinner
    Do not skip save_report even if you are missing an email address.
 9. Draft reschedule or heads-up emails with draft_email for the most important people.
    Use only addresses recall_memory returned. If none, skip that draft.
 
-If the user gives you a correction or new fact, call save_correction first,
-then redo the analysis.
-
 Write in short, plain sentences."""
+
+CORRECT_PROMPT = """You patch an existing blast-radius graph. You do not rebuild it.
+
+You have only three tools: save_correction, recall_memory, update_nodes.
+
+Follow the user's numbered steps exactly.
+Only change EXISTING node ids from the graph you were given.
+Personal schedule facts about dinner/Sam/lease usually change nothing — use [].
+If Lena becomes backup release approver, that can make product-chain nodes
+(pr, qa, gonogo, acme) fine or less severe because release can proceed without Maya.
+If nothing changes, call update_nodes with [].
+Never call save_report. Never invent new node ids."""
 
 
 def build_model():
@@ -60,21 +82,52 @@ def build_model():
             model_id=os.getenv("OPENAI_MODEL", "gpt-4o"),
             params={"max_tokens": 4000},
         )
-    # Default: Bedrock, uses your AWS credentials
     return None
 
 
 def build_agent():
     model = build_model()
-    tools = [recall_memory, save_correction, check_flight, draft_email, save_report]
+    tool_list = [recall_memory, save_correction, check_flight, draft_email, save_report]
     if model is None:
-        return Agent(system_prompt=SYSTEM_PROMPT, tools=tools)
-    return Agent(model=model, system_prompt=SYSTEM_PROMPT, tools=tools)
+        return Agent(system_prompt=SYSTEM_PROMPT, tools=tool_list)
+    return Agent(model=model, system_prompt=SYSTEM_PROMPT, tools=tool_list)
+
+
+def build_correct_agent():
+    model = build_model()
+    tool_list = [recall_memory, save_correction, update_nodes]
+    if model is None:
+        return Agent(system_prompt=CORRECT_PROMPT, tools=tool_list)
+    return Agent(model=model, system_prompt=CORRECT_PROMPT, tools=tool_list)
+
+
+def build_draft_agent():
+    model = build_model()
+    tool_list = [draft_email]
+    prompt = (
+        "You only draft short, polite follow-up emails. "
+        "You have one tool: draft_email. Call it once per email. Do nothing else."
+    )
+    if model is None:
+        return Agent(system_prompt=prompt, tools=tool_list)
+    return Agent(model=model, system_prompt=prompt, tools=tool_list)
 
 
 async def run_once(message):
     await memory.connect()
     agent = build_agent()
+    await agent.invoke_async(message)
+
+
+async def run_correct(message):
+    await memory.connect()
+    agent = build_correct_agent()
+    await agent.invoke_async(message)
+
+
+async def run_draft_emails(message):
+    await memory.connect()
+    agent = build_draft_agent()
     await agent.invoke_async(message)
 
 
@@ -86,7 +139,6 @@ async def main():
         await agent.invoke_async(sys.argv[1])
         return
 
-    # Interactive mode for the live demo
     print("Blast Radius is ready. Type a trigger or a correction. Type 'quit' to exit.")
     while True:
         message = input("\nYou: ")
