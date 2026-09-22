@@ -250,6 +250,72 @@
       border-radius: 12px;
       overflow: hidden;
       background: #0e1118;
+      transition: opacity 200ms ease;
+    }
+
+    .graph-wrap.dimmed {
+      opacity: 0.45;
+    }
+
+    .graph-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+      background: rgba(11, 13, 18, 0.72);
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    .graph-overlay.visible {
+      display: flex;
+    }
+
+    .spinner {
+      width: 22px;
+      height: 22px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 700ms linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .run-meta {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .verdict {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      background: var(--bg);
+      margin-bottom: 16px;
+      transition: opacity 200ms ease;
+    }
+
+    .verdict.dimmed {
+      opacity: 0.45;
+    }
+
+    .banner.neutral {
+      background: rgba(139, 146, 165, 0.12);
+      border-color: var(--border);
+    }
+
+    .banner.warn {
+      background: rgba(245, 158, 11, 0.12);
+      border-color: var(--risk);
     }
 
     #cy {
@@ -319,14 +385,6 @@
     }
 
     .teach input:focus { border-color: var(--accent); }
-
-    .verdict {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 18px;
-      background: var(--bg);
-      margin-bottom: 16px;
-    }
 
     .verdict-score {
       font-size: 48px;
@@ -411,6 +469,13 @@
       margin-top: 8px;
     }
 
+    .stale-label {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
     .empty {
       color: var(--muted);
       font-size: 14px;
@@ -453,7 +518,14 @@
     <div class="main">
       <div class="panel">
         <div class="panel-title">Blast chain</div>
-        <div class="graph-wrap"><div id="cy"></div></div>
+        <div class="graph-wrap" id="graphWrap">
+          <div id="cy"></div>
+          <div class="graph-overlay" id="graphOverlay">
+            <div class="spinner"></div>
+            <div id="overlayText">Re-running with new fact...</div>
+          </div>
+        </div>
+        <div class="run-meta" id="runMeta">No runs yet</div>
         <div class="side-detail" id="nodeDetail">
           <h3 id="detailLabel"></h3>
           <div class="badge" id="detailStatus"></div>
@@ -530,6 +602,9 @@
     var pollTimer = null;
     var lastGraph = null;
     var lastPrevious = null;
+    var lastTrigger = "My Thursday flight AS 331 is delayed 5 hours. What breaks?";
+    var currentRunNumber = 0;
+    var awaitingResult = false;
     var USE_LIVE = true;
 
     function statusColor(status) {
@@ -553,6 +628,48 @@
         return "fine";
       }
       return status;
+    }
+
+    function setRunningUI(isRunning, overlayMessage) {
+      var wrap = document.getElementById("graphWrap");
+      var overlay = document.getElementById("graphOverlay");
+      var verdict = document.getElementById("verdict");
+      if (isRunning) {
+        wrap.className = "graph-wrap dimmed";
+        verdict.className = "verdict dimmed";
+        overlay.className = "graph-overlay visible";
+        if (overlayMessage) {
+          document.getElementById("overlayText").textContent = overlayMessage;
+        }
+        document.getElementById("runBtn").disabled = true;
+        document.getElementById("teachBtn").disabled = true;
+      } else {
+        wrap.className = "graph-wrap";
+        verdict.className = "verdict";
+        overlay.className = "graph-overlay";
+        document.getElementById("runBtn").disabled = false;
+        document.getElementById("teachBtn").disabled = false;
+      }
+    }
+
+    function formatUpdated(iso) {
+      if (!iso) {
+        return "just now";
+      }
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) {
+        return iso;
+      }
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+    }
+
+    function updateRunMeta(runNumber, updatedAt) {
+      var el = document.getElementById("runMeta");
+      if (!runNumber || runNumber < 1) {
+        el.textContent = "No runs yet";
+        return;
+      }
+      el.textContent = "Updated " + formatUpdated(updatedAt) + " · Run #" + runNumber;
     }
 
     function initCy() {
@@ -622,12 +739,26 @@
       detail.className = "side-detail visible";
     }
 
-    function renderGraph(graph, changedIds) {
+    function renderGraph(graph, changedIds, keepPositions) {
       if (!cy) {
         return;
       }
       if (!graph || !graph.nodes) {
         return;
+      }
+
+      var positions = {};
+      if (keepPositions) {
+        var existing = cy.nodes();
+        var p = 0;
+        while (p < existing.length) {
+          var en = existing[p];
+          positions[en.id()] = {
+            x: en.position("x"),
+            y: en.position("y")
+          };
+          p = p + 1;
+        }
       }
 
       cy.elements().remove();
@@ -637,7 +768,7 @@
       while (i < graph.nodes.length) {
         var n = graph.nodes[i];
         var status = normalizeStatus(n.status);
-        elements.push({
+        var nodeEl = {
           group: "nodes",
           data: {
             id: n.id,
@@ -650,12 +781,19 @@
           style: {
             "background-color": statusColor(status)
           }
-        });
+        };
+        if (keepPositions && positions[n.id]) {
+          nodeEl.position = {
+            x: positions[n.id].x,
+            y: positions[n.id].y
+          };
+        }
+        elements.push(nodeEl);
         i = i + 1;
       }
 
       i = 0;
-      while (i < graph.edges.length) {
+      while (i < (graph.edges || []).length) {
         var e = graph.edges[i];
         elements.push({
           group: "edges",
@@ -671,14 +809,18 @@
       var index = 0;
       function addNext() {
         if (index >= elements.length) {
-          cy.layout({
-            name: "breadthfirst",
-            directed: true,
-            padding: 30,
-            spacingFactor: 1.15,
-            animate: true,
-            animationDuration: 250
-          }).run();
+          if (keepPositions) {
+            cy.layout({ name: "preset", fit: true, padding: 30 }).run();
+          } else {
+            cy.layout({
+              name: "breadthfirst",
+              directed: true,
+              padding: 30,
+              spacingFactor: 1.15,
+              animate: true,
+              animationDuration: 250
+            }).run();
+          }
 
           if (changedIds && changedIds.length > 0) {
             var c = 0;
@@ -732,6 +874,13 @@
         var card = document.createElement("div");
         card.className = "email-card";
 
+        if (email.no_longer_needed) {
+          var stale = document.createElement("div");
+          stale.className = "stale-label";
+          stale.textContent = "No longer needed";
+          card.appendChild(stale);
+        }
+
         var toEl = document.createElement("div");
         toEl.className = "email-to";
         toEl.textContent = "To: " + email.to;
@@ -749,36 +898,50 @@
         var actions = document.createElement("div");
         actions.className = "email-actions";
 
-        var approve = document.createElement("button");
-        approve.className = "btn-approve";
-        approve.type = "button";
-        approve.textContent = "Approve";
-        approve.onclick = function(c) {
-          return function() {
-            c.className = "email-card sent";
-            var label = document.createElement("div");
-            label.className = "sent-label";
-            label.textContent = "Sent (demo)";
-            c.appendChild(label);
-            var buttons = c.querySelector(".email-actions");
-            if (buttons) {
-              buttons.style.display = "none";
-            }
-          };
-        }(card);
+        if (email.no_longer_needed) {
+          var skipOnly = document.createElement("button");
+          skipOnly.className = "btn-secondary";
+          skipOnly.type = "button";
+          skipOnly.textContent = "Skip";
+          skipOnly.onclick = function(c) {
+            return function() {
+              c.style.display = "none";
+            };
+          }(card);
+          actions.appendChild(skipOnly);
+        } else {
+          var approve = document.createElement("button");
+          approve.className = "btn-approve";
+          approve.type = "button";
+          approve.textContent = "Approve";
+          approve.onclick = function(c) {
+            return function() {
+              c.className = "email-card sent";
+              var label = document.createElement("div");
+              label.className = "sent-label";
+              label.textContent = "Sent (demo)";
+              c.appendChild(label);
+              var buttons = c.querySelector(".email-actions");
+              if (buttons) {
+                buttons.style.display = "none";
+              }
+            };
+          }(card);
 
-        var skip = document.createElement("button");
-        skip.className = "btn-secondary";
-        skip.type = "button";
-        skip.textContent = "Skip";
-        skip.onclick = function(c) {
-          return function() {
-            c.style.display = "none";
-          };
-        }(card);
+          var skip = document.createElement("button");
+          skip.className = "btn-secondary";
+          skip.type = "button";
+          skip.textContent = "Skip";
+          skip.onclick = function(c) {
+            return function() {
+              c.style.display = "none";
+            };
+          }(card);
 
-        actions.appendChild(approve);
-        actions.appendChild(skip);
+          actions.appendChild(approve);
+          actions.appendChild(skip);
+        }
+
         card.appendChild(actions);
         box.appendChild(card);
         i = i + 1;
@@ -805,135 +968,181 @@
       shownEventCount = 0;
       document.getElementById("feedLines").innerHTML = "";
       document.getElementById("feed").className = "feed visible";
-      document.getElementById("learnBanner").className = "banner";
+    }
+
+    function nodeKey(node) {
+      return String(node.id || "");
     }
 
     function diffStatuses(previous, current) {
       var changed = [];
-      var improved = 0;
       if (!previous || !previous.nodes || !current || !current.nodes) {
-        return { changed: changed, improved: improved };
+        return { changed: changed, count: 0 };
       }
 
-      var prevMap = {};
+      var prevById = {};
       var i = 0;
       while (i < previous.nodes.length) {
-        prevMap[previous.nodes[i].id] = normalizeStatus(previous.nodes[i].status);
+        var pn = previous.nodes[i];
+        prevById[nodeKey(pn)] = normalizeStatus(pn.status);
         i = i + 1;
       }
 
       i = 0;
       while (i < current.nodes.length) {
         var node = current.nodes[i];
-        var id = node.id;
+        var id = nodeKey(node);
+        var before = prevById[id];
         var now = normalizeStatus(node.status);
-        if (prevMap[id] && prevMap[id] !== now) {
+        if (before && before !== now) {
           changed.push(id);
-          if ((prevMap[id] === "broken" || prevMap[id] === "risk") && (now === "fine" || now === "risk" && prevMap[id] === "broken")) {
-            improved = improved + 1;
-          }
-          if ((prevMap[id] === "broken" || prevMap[id] === "risk") && now === "fine") {
-            // already counted above for fine; risk->fine also counts
-          }
         }
         i = i + 1;
       }
 
-      // recount improved cleanly
-      improved = 0;
-      i = 0;
-      while (i < changed.length) {
-        var cid = changed[i];
-        var before = prevMap[cid];
-        var after = null;
-        var j = 0;
-        while (j < current.nodes.length) {
-          if (current.nodes[j].id === cid) {
-            after = normalizeStatus(current.nodes[j].status);
-          }
-          j = j + 1;
-        }
-        if ((before === "broken" || before === "risk") && after === "fine") {
-          improved = improved + 1;
-        }
-        if (before === "broken" && after === "risk") {
-          improved = improved + 1;
-        }
-        i = i + 1;
-      }
-
-      return { changed: changed, improved: improved };
+      return { changed: changed, count: changed.length };
     }
 
-    function showLearnBanner(improved) {
+    function showCompareBanner(hadPrevious, diff, reportSaved) {
       var banner = document.getElementById("learnBanner");
-      if (improved > 0) {
-        banner.textContent = "Learned: " + improved + " items no longer at risk";
+      if (!reportSaved) {
+        banner.textContent = "Agent didn't produce a new report";
+        banner.className = "banner visible warn";
+        return;
+      }
+      if (!hadPrevious) {
+        banner.className = "banner";
+        banner.textContent = "";
+        return;
+      }
+      if (diff.count > 0) {
+        banner.textContent = "Learned: " + diff.count + " items changed";
         banner.className = "banner visible";
+      } else {
+        banner.textContent = "No change. This fact doesn't affect your blast radius.";
+        banner.className = "banner visible neutral";
       }
     }
 
-    function applyResult(data) {
+    function applyResult(data, options) {
+      options = options || {};
       lastGraph = data.graph;
       lastPrevious = data.previous;
-      var diff = diffStatuses(data.previous, data.graph);
-      renderGraph(data.graph, diff.changed);
-      renderVerdict(data.graph);
-      renderEmails(data.emails || []);
-      if (diff.improved > 0) {
-        showLearnBanner(diff.improved);
+      // Do not write into the top trigger input here.
+      if (data.last_trigger) {
+        lastTrigger = data.last_trigger;
       }
+      if (data.run_number) {
+        currentRunNumber = data.run_number;
+      }
+      updateRunMeta(data.run_number || currentRunNumber, data.updated_at);
+
+      var reportSaved = data.report_saved;
+      if (reportSaved === undefined || reportSaved === null) {
+        reportSaved = true;
+      }
+
+      if (!reportSaved && options.afterRun) {
+        showCompareBanner(true, { changed: [], count: 0 }, false);
+        setRunningUI(false);
+        return;
+      }
+
+      var diff = diffStatuses(data.previous, data.graph);
+      var keepPositions = false;
+      if (options.keepPositions) {
+        keepPositions = true;
+      }
+      if (options.afterRun && data.had_previous) {
+        keepPositions = true;
+      }
+
+      if (data.graph) {
+        renderGraph(data.graph, diff.changed, keepPositions);
+        renderVerdict(data.graph);
+      }
+      renderEmails(data.emails || []);
+
+      if (options.afterRun) {
+        var hadPrevious = data.had_previous;
+        if (hadPrevious === undefined || hadPrevious === null) {
+          if (data.previous) {
+            hadPrevious = true;
+          } else {
+            hadPrevious = false;
+          }
+        }
+        showCompareBanner(hadPrevious, diff, reportSaved);
+      }
+
+      setRunningUI(false);
+    }
+
+    async function finishRun() {
+      awaitingResult = false;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      var resultRes = await fetch("/result");
+      var result = await resultRes.json();
+      applyResult(result, { afterRun: true });
     }
 
     async function pollEvents() {
       try {
         var res = await fetch("/events");
         var data = await res.json();
+        if (data.last_trigger) {
+          lastTrigger = data.last_trigger;
+        }
+        if (data.run_number) {
+          currentRunNumber = data.run_number;
+          updateRunMeta(data.run_number, data.updated_at);
+        }
         var events = data.events || [];
         while (shownEventCount < events.length) {
           appendFeedLine(events[shownEventCount]);
           shownEventCount = shownEventCount + 1;
         }
-        if (data.done) {
-          clearInterval(pollTimer);
-          pollTimer = null;
-          document.getElementById("runBtn").disabled = false;
-          document.getElementById("teachBtn").disabled = false;
-          var resultRes = await fetch("/result");
-          var result = await resultRes.json();
-          applyResult(result);
+        if (data.done && awaitingResult) {
+          await finishRun();
         }
       } catch (err) {
         appendFeedLine("Poll error: " + err);
       }
     }
 
-    async function startRun(message) {
+    function beginPolling(overlayMessage) {
+      awaitingResult = true;
+      setRunningUI(true, overlayMessage || "Investigating...");
+      if (pollTimer) {
+        clearInterval(pollTimer);
+      }
+      pollTimer = setInterval(pollEvents, 700);
+      pollEvents();
+    }
+
+    async function startRun(message, overlayMessage) {
       if (!message || message.trim() === "") {
         return;
       }
-      document.getElementById("runBtn").disabled = true;
-      document.getElementById("teachBtn").disabled = true;
       resetFeed();
       appendFeedLine("Queued: " + message);
+      setRunningUI(true, overlayMessage || "Investigating...");
 
       if (!USE_LIVE) {
-        // Demo mode with hardcoded sample until live wiring is confirmed
         setTimeout(function() {
-          appendFeedLine("Checking flight AS 331");
-        }, 300);
-        setTimeout(function() {
-          appendFeedLine("Recall: what is on Thursday?");
-        }, 700);
-        setTimeout(function() {
-          appendFeedLine("Found: Northwind walkthrough (email)");
-        }, 1100);
-        setTimeout(function() {
-          appendFeedLine("Saving blast radius report");
-          applyResult({ graph: SAMPLE, previous: null, emails: SAMPLE_EMAILS });
-          document.getElementById("runBtn").disabled = false;
-          document.getElementById("teachBtn").disabled = false;
-        }, 1600);
+          applyResult({
+            graph: SAMPLE,
+            previous: null,
+            emails: SAMPLE_EMAILS,
+            report_saved: true,
+            had_previous: false,
+            run_number: 1,
+            updated_at: new Date().toISOString()
+          }, { afterRun: true });
+        }, 1200);
         return;
       }
 
@@ -945,15 +1154,49 @@
       var payload = await res.json();
       if (!payload.ok) {
         appendFeedLine("Could not start: " + (payload.error || "unknown"));
-        document.getElementById("runBtn").disabled = false;
-        document.getElementById("teachBtn").disabled = false;
+        setRunningUI(false);
         return;
       }
-      pollTimer = setInterval(pollEvents, 700);
+      if (payload.run_number) {
+        currentRunNumber = payload.run_number;
+        updateRunMeta(payload.run_number, null);
+      }
+      if (payload.last_trigger) {
+        lastTrigger = payload.last_trigger;
+      }
+      beginPolling(overlayMessage || "Investigating...");
+    }
+
+    async function startCorrect(fact) {
+      if (!fact || fact.trim() === "") {
+        return;
+      }
+      resetFeed();
+      appendFeedLine("Correction: " + fact);
+      setRunningUI(true, "Re-running with new fact...");
+
+      var res = await fetch("/correct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fact: fact })
+      });
+      var payload = await res.json();
+      if (!payload.ok) {
+        appendFeedLine("Could not start: " + (payload.error || "unknown"));
+        setRunningUI(false);
+        return;
+      }
+      if (payload.run_number) {
+        currentRunNumber = payload.run_number;
+        updateRunMeta(payload.run_number, null);
+      }
+      beginPolling("Re-running with new fact...");
     }
 
     document.getElementById("runBtn").onclick = function() {
-      startRun(document.getElementById("trigger").value);
+      var trigger = document.getElementById("trigger").value;
+      lastTrigger = trigger;
+      startRun(trigger, "Investigating...");
     };
 
     document.getElementById("teachBtn").onclick = function() {
@@ -961,7 +1204,7 @@
       if (correction.trim() === "") {
         return;
       }
-      startRun(correction);
+      startCorrect(correction);
     };
 
     document.getElementById("resetBtn").onclick = async function() {
@@ -969,6 +1212,7 @@
         clearInterval(pollTimer);
         pollTimer = null;
       }
+      awaitingResult = false;
       document.getElementById("resetBtn").disabled = true;
       try {
         var res = await fetch("/reset", { method: "POST" });
@@ -982,14 +1226,16 @@
         document.getElementById("feed").className = "feed";
         document.getElementById("learnBanner").className = "banner";
         document.getElementById("correction").value = "";
-        document.getElementById("trigger").value = "My Thursday flight AS 331 is delayed 5 hours. What breaks?";
+        lastTrigger = "My Thursday flight AS 331 is delayed 5 hours. What breaks?";
+        document.getElementById("trigger").value = lastTrigger;
         document.getElementById("nodeDetail").className = "side-detail";
         lastGraph = null;
         lastPrevious = null;
         shownEventCount = 0;
-        applyResult({ graph: SAMPLE, previous: null, emails: SAMPLE_EMAILS });
-        document.getElementById("runBtn").disabled = false;
-        document.getElementById("teachBtn").disabled = false;
+        currentRunNumber = 0;
+        updateRunMeta(0, null);
+        applyResult({ graph: SAMPLE, previous: null, emails: SAMPLE_EMAILS, report_saved: true, had_previous: false }, {});
+        setRunningUI(false);
       } catch (err) {
         appendFeedLine("Reset error: " + err);
       }
@@ -1002,14 +1248,52 @@
       chips[c].onclick = function(btn) {
         return function() {
           document.getElementById("trigger").value = btn.getAttribute("data-q");
-          startRun(btn.getAttribute("data-q"));
+          lastTrigger = btn.getAttribute("data-q");
+          startRun(btn.getAttribute("data-q"), "Investigating...");
         };
       }(chips[c]);
       c = c + 1;
     }
 
-    initCy();
-    applyResult({ graph: SAMPLE, previous: null, emails: SAMPLE_EMAILS });
+    async function boot() {
+      initCy();
+      applyResult({ graph: SAMPLE, previous: null, emails: SAMPLE_EMAILS, report_saved: true, had_previous: false }, {});
+
+      try {
+        var evRes = await fetch("/events");
+        var ev = await evRes.json();
+        if (ev.last_trigger) {
+          lastTrigger = ev.last_trigger;
+          document.getElementById("trigger").value = ev.last_trigger;
+        }
+        if (ev.run_number) {
+          currentRunNumber = ev.run_number;
+          updateRunMeta(ev.run_number, ev.updated_at);
+        }
+
+        if (!ev.done) {
+          resetFeed();
+          var events = ev.events || [];
+          shownEventCount = 0;
+          while (shownEventCount < events.length) {
+            appendFeedLine(events[shownEventCount]);
+            shownEventCount = shownEventCount + 1;
+          }
+          beginPolling("Re-running with new fact...");
+          return;
+        }
+
+        var resultRes = await fetch("/result");
+        var result = await resultRes.json();
+        if (result.graph) {
+          applyResult(result, { afterRun: false });
+        }
+      } catch (err) {
+        console.log("boot error", err);
+      }
+    }
+
+    boot();
   </script>
 </body>
 </html>
