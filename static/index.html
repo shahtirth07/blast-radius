@@ -1,0 +1,1015 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blast Radius</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.4/cytoscape.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --card: #141821;
+      --border: #232837;
+      --text: #e6e8ee;
+      --muted: #8b92a5;
+      --broken: #ef4444;
+      --risk: #f59e0b;
+      --fine: #22c55e;
+      --accent: #7c6cf6;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 28px;
+      border-bottom: 1px solid var(--border);
+      background: var(--card);
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .wordmark {
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--fine);
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
+    }
+
+    .page {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px 28px 40px;
+    }
+
+    .command {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+
+    .command-row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .command input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font: inherit;
+      font-size: 16px;
+      padding: 14px 16px;
+      outline: none;
+      transition: border-color 200ms ease;
+    }
+
+    .command input:focus {
+      border-color: var(--accent);
+    }
+
+    button {
+      font: inherit;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 200ms ease, opacity 200ms ease, transform 150ms ease;
+    }
+
+    button:hover { opacity: 0.92; }
+    button:active { transform: scale(0.98); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+      padding: 0 22px;
+      min-width: 96px;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 8px 14px;
+      font-size: 13px;
+    }
+
+    .btn-approve {
+      background: var(--fine);
+      color: #052e16;
+      font-weight: 600;
+      padding: 8px 14px;
+      font-size: 13px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .chip {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: border-color 200ms ease, color 200ms ease;
+    }
+
+    .chip:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+
+    .feed {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      max-height: 160px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .feed.visible { display: block; }
+
+    .feed-title {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 10px;
+    }
+
+    .feed-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 0;
+      font-size: 14px;
+      color: var(--text);
+      opacity: 0;
+      animation: fadeIn 220ms ease forwards;
+    }
+
+    .feed-icon {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .banner {
+      display: none;
+      background: rgba(124, 108, 246, 0.12);
+      border: 1px solid var(--accent);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .banner.visible { display: block; }
+
+    .main {
+      display: grid;
+      grid-template-columns: 1.5fr 1fr;
+      gap: 16px;
+      min-height: 560px;
+    }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      min-height: 0;
+    }
+
+    .panel-title {
+      font-size: 13px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 12px;
+    }
+
+    .graph-wrap {
+      position: relative;
+      height: 420px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: #0e1118;
+    }
+
+    #cy {
+      width: 100%;
+      height: 100%;
+    }
+
+    .side-detail {
+      display: none;
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      background: var(--bg);
+    }
+
+    .side-detail.visible { display: block; }
+
+    .side-detail h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 4px 8px;
+      border-radius: 999px;
+      margin-bottom: 10px;
+    }
+
+    .badge.broken { background: rgba(239, 68, 68, 0.15); color: var(--broken); }
+    .badge.risk { background: rgba(245, 158, 11, 0.15); color: var(--risk); }
+    .badge.fine { background: rgba(34, 197, 94, 0.15); color: var(--fine); }
+
+    .detail-row {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 6px 0;
+    }
+
+    .detail-row strong {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .teach {
+      margin-top: 14px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .teach input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font: inherit;
+      font-size: 14px;
+      padding: 12px 14px;
+      outline: none;
+      transition: border-color 200ms ease;
+    }
+
+    .teach input:focus { border-color: var(--accent); }
+
+    .verdict {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      background: var(--bg);
+      margin-bottom: 16px;
+    }
+
+    .verdict-score {
+      font-size: 48px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      margin: 8px 0 12px;
+    }
+
+    .verdict-score.HIGH { color: var(--broken); }
+    .verdict-score.MEDIUM { color: var(--risk); }
+    .verdict-score.LOW { color: var(--fine); }
+
+    .verdict-meta {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .verdict-rec {
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 420px;
+      overflow-y: auto;
+    }
+
+    .email-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      background: var(--bg);
+      transition: border-color 200ms ease, background 200ms ease;
+    }
+
+    .email-card.sent {
+      border-color: var(--fine);
+      background: rgba(34, 197, 94, 0.08);
+    }
+
+    .email-to {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .email-subject {
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    .email-card textarea {
+      width: 100%;
+      min-height: 90px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      padding: 10px;
+      resize: vertical;
+      outline: none;
+    }
+
+    .email-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .sent-label {
+      color: var(--fine);
+      font-weight: 600;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+
+    .empty {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="wordmark">Blast Radius</div>
+    <div class="topbar-right">
+      <button class="btn-secondary" id="resetBtn" type="button">Reset demo</button>
+      <div class="status"><span class="dot"></span> Connected to Cognee Cloud</div>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="command">
+      <div class="command-row">
+        <input id="trigger" type="text" placeholder="What changed?" value="My Thursday flight AS 331 is delayed 5 hours. What breaks?">
+        <button class="btn-primary" id="runBtn" type="button">Run</button>
+      </div>
+      <div class="chips">
+        <button class="chip" type="button" data-q="My Thursday flight AS 331 is delayed 5 hours. What breaks?">Flight AS 331 delayed 5 hours</button>
+        <button class="chip" type="button" data-q="I'm sick all day Thursday. What breaks?">I'm sick all day Thursday</button>
+        <button class="chip" type="button" data-q="Cancel everything Friday. What breaks?">Cancel everything Friday</button>
+      </div>
+    </div>
+
+    <div class="banner" id="learnBanner"></div>
+
+    <div class="feed" id="feed">
+      <div class="feed-title">Investigation</div>
+      <div id="feedLines"></div>
+    </div>
+
+    <div class="main">
+      <div class="panel">
+        <div class="panel-title">Blast chain</div>
+        <div class="graph-wrap"><div id="cy"></div></div>
+        <div class="side-detail" id="nodeDetail">
+          <h3 id="detailLabel"></h3>
+          <div class="badge" id="detailStatus"></div>
+          <div class="detail-row"><strong>Source:</strong> <span id="detailSource"></span></div>
+          <div class="detail-row"><strong>Reason:</strong> <span id="detailReason"></span></div>
+        </div>
+        <div class="teach">
+          <input id="correction" type="text" placeholder="Teach it — e.g. Lena is now approved as backup release approver.">
+          <button class="btn-secondary" id="teachBtn" type="button">Save and re-run</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Verdict</div>
+        <div class="verdict" id="verdict">
+          <div class="verdict-meta">Damage score</div>
+          <div class="verdict-score HIGH" id="score">HIGH</div>
+          <div class="verdict-meta">Confidence: <span id="confidence">high</span></div>
+          <div class="verdict-rec" id="recommendation">Notify NorthWind and protect the Q3 bookings number.</div>
+        </div>
+        <div class="panel-title">Actions</div>
+        <div class="actions" id="actions"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var SAMPLE = {
+      "nodes": [
+        {"id": "flight", "label": "Flight AS 331", "status": "broken", "source": "calendar / airline", "reason": "Delayed 5 hours, arrives 22:40 PDT", "severity": "high"},
+        {"id": "northwind", "label": "Northwind walkthrough", "status": "broken", "source": "email", "reason": "Thu 1pm Seattle depends on morning arrival", "severity": "high"},
+        {"id": "signing", "label": "Dana cannot sign by Fri", "status": "broken", "source": "email", "reason": "Signing blocked without walkthrough", "severity": "high"},
+        {"id": "pricing", "label": "Q3 pricing resets", "status": "risk", "source": "email", "reason": "October slip resets Q3 pricing", "severity": "high"},
+        {"id": "board", "label": "Jordan board bookings", "status": "risk", "source": "email / notes", "reason": "Tue board deck needs Northwind signature", "severity": "high"},
+        {"id": "pr", "label": "Raj export PR review", "status": "broken", "source": "Slack", "reason": "Review due Thu 3pm while Maya is stuck", "severity": "medium"},
+        {"id": "qa", "label": "QA blocked", "status": "risk", "source": "Slack", "reason": "CSV export blocked without review", "severity": "medium"},
+        {"id": "gonogo", "label": "Fri v2.4 go/no-go", "status": "risk", "source": "Slack", "reason": "Release gate fails without export", "severity": "high"},
+        {"id": "acme", "label": "Mon Acme demo", "status": "risk", "source": "email", "reason": "Demo needs CSV export", "severity": "high"},
+        {"id": "lease", "label": "Lease renewal", "status": "fine", "source": "email", "reason": "Can sign from phone anytime", "severity": "low"},
+        {"id": "dinner", "label": "Friday dinner with Sam", "status": "fine", "source": "Slack", "reason": "Evening plans still work if back Thu night", "severity": "low"}
+      ],
+      "edges": [
+        {"from": "flight", "to": "northwind"},
+        {"from": "northwind", "to": "signing"},
+        {"from": "signing", "to": "pricing"},
+        {"from": "pricing", "to": "board"},
+        {"from": "flight", "to": "pr"},
+        {"from": "pr", "to": "qa"},
+        {"from": "qa", "to": "gonogo"},
+        {"from": "gonogo", "to": "acme"}
+      ],
+      "score": "HIGH",
+      "confidence": "high",
+      "recommendation": "Reschedule Northwind with Dana and protect Raj's PR review so the Acme demo can stay."
+    };
+
+    var SAMPLE_EMAILS = [
+      {
+        "file": "demo_dana.txt",
+        "to": "dana@northwind.example",
+        "subject": "Need to reschedule Thursday walkthrough",
+        "body": "Hi Dana,\n\nMy flight AS 331 is delayed 5 hours, so I will miss the 1pm security walkthrough.\nCan we move it to Friday morning so we still hit the Friday signing window?\n\nThanks,\nMaya"
+      },
+      {
+        "file": "demo_raj.txt",
+        "to": "raj@lumenlabs.example",
+        "subject": "PR review may slip past Thu 3pm",
+        "body": "Hey Raj,\n\nI'm stuck in Seattle longer than planned. Can Lena take the export PR review if I'm not back by 3pm?\n\nMaya"
+      }
+    ];
+
+    var cy = null;
+    var shownEventCount = 0;
+    var pollTimer = null;
+    var lastGraph = null;
+    var lastPrevious = null;
+    var USE_LIVE = true;
+
+    function statusColor(status) {
+      if (status === "broken") {
+        return "#ef4444";
+      }
+      if (status === "risk") {
+        return "#f59e0b";
+      }
+      return "#22c55e";
+    }
+
+    function normalizeStatus(status) {
+      if (status === "at_risk" || status === "at-risk" || status === "AT RISK") {
+        return "risk";
+      }
+      if (status === "BROKEN") {
+        return "broken";
+      }
+      if (status === "FINE") {
+        return "fine";
+      }
+      return status;
+    }
+
+    function initCy() {
+      cy = cytoscape({
+        container: document.getElementById("cy"),
+        style: [
+          {
+            selector: "node",
+            style: {
+              "background-color": "#7c6cf6",
+              "label": "data(label)",
+              "color": "#e6e8ee",
+              "font-family": "Inter, sans-serif",
+              "font-size": 11,
+              "text-wrap": "wrap",
+              "text-max-width": 90,
+              "text-valign": "bottom",
+              "text-margin-y": 6,
+              "width": 28,
+              "height": 28,
+              "border-width": 2,
+              "border-color": "#232837",
+              "transition-property": "background-color, width, height, border-color",
+              "transition-duration": "200ms"
+            }
+          },
+          {
+            selector: "node.changed",
+            style: {
+              "border-color": "#7c6cf6",
+              "border-width": 4,
+              "width": 34,
+              "height": 34
+            }
+          },
+          {
+            selector: "edge",
+            style: {
+              "width": 2,
+              "line-color": "#232837",
+              "target-arrow-color": "#232837",
+              "target-arrow-shape": "triangle",
+              "curve-style": "bezier"
+            }
+          }
+        ],
+        layout: { name: "preset" },
+        userZoomingEnabled: true,
+        userPanningEnabled: true
+      });
+
+      cy.on("tap", "node", function(evt) {
+        var node = evt.target;
+        showNodeDetail(node.data());
+      });
+    }
+
+    function showNodeDetail(data) {
+      var detail = document.getElementById("nodeDetail");
+      var status = normalizeStatus(data.status);
+      document.getElementById("detailLabel").textContent = data.label;
+      var badge = document.getElementById("detailStatus");
+      badge.textContent = status;
+      badge.className = "badge " + status;
+      document.getElementById("detailSource").textContent = data.source || "—";
+      document.getElementById("detailReason").textContent = data.reason || "—";
+      detail.className = "side-detail visible";
+    }
+
+    function renderGraph(graph, changedIds) {
+      if (!cy) {
+        return;
+      }
+      if (!graph || !graph.nodes) {
+        return;
+      }
+
+      cy.elements().remove();
+
+      var elements = [];
+      var i = 0;
+      while (i < graph.nodes.length) {
+        var n = graph.nodes[i];
+        var status = normalizeStatus(n.status);
+        elements.push({
+          group: "nodes",
+          data: {
+            id: n.id,
+            label: n.label,
+            status: status,
+            source: n.source,
+            reason: n.reason,
+            severity: n.severity
+          },
+          style: {
+            "background-color": statusColor(status)
+          }
+        });
+        i = i + 1;
+      }
+
+      i = 0;
+      while (i < graph.edges.length) {
+        var e = graph.edges[i];
+        elements.push({
+          group: "edges",
+          data: {
+            id: "e" + i,
+            source: e.from,
+            target: e.to
+          }
+        });
+        i = i + 1;
+      }
+
+      var index = 0;
+      function addNext() {
+        if (index >= elements.length) {
+          cy.layout({
+            name: "breadthfirst",
+            directed: true,
+            padding: 30,
+            spacingFactor: 1.15,
+            animate: true,
+            animationDuration: 250
+          }).run();
+
+          if (changedIds && changedIds.length > 0) {
+            var c = 0;
+            while (c < changedIds.length) {
+              var node = cy.getElementById(changedIds[c]);
+              if (node && node.length > 0) {
+                node.addClass("changed");
+              }
+              c = c + 1;
+            }
+            setTimeout(function() {
+              cy.nodes().removeClass("changed");
+            }, 1800);
+          }
+          return;
+        }
+
+        cy.add(elements[index]);
+        index = index + 1;
+        setTimeout(addNext, 70);
+      }
+      addNext();
+    }
+
+    function renderVerdict(graph) {
+      if (!graph) {
+        return;
+      }
+      var score = graph.score || "—";
+      var scoreEl = document.getElementById("score");
+      scoreEl.textContent = score;
+      scoreEl.className = "verdict-score " + score;
+      document.getElementById("confidence").textContent = graph.confidence || "—";
+      document.getElementById("recommendation").textContent = graph.recommendation || "";
+    }
+
+    function renderEmails(emails) {
+      var box = document.getElementById("actions");
+      box.innerHTML = "";
+      if (!emails || emails.length === 0) {
+        var empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No drafted emails yet.";
+        box.appendChild(empty);
+        return;
+      }
+
+      var i = 0;
+      while (i < emails.length) {
+        var email = emails[i];
+        var card = document.createElement("div");
+        card.className = "email-card";
+
+        var toEl = document.createElement("div");
+        toEl.className = "email-to";
+        toEl.textContent = "To: " + email.to;
+        card.appendChild(toEl);
+
+        var subEl = document.createElement("div");
+        subEl.className = "email-subject";
+        subEl.textContent = email.subject;
+        card.appendChild(subEl);
+
+        var body = document.createElement("textarea");
+        body.value = email.body;
+        card.appendChild(body);
+
+        var actions = document.createElement("div");
+        actions.className = "email-actions";
+
+        var approve = document.createElement("button");
+        approve.className = "btn-approve";
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.onclick = function(c) {
+          return function() {
+            c.className = "email-card sent";
+            var label = document.createElement("div");
+            label.className = "sent-label";
+            label.textContent = "Sent (demo)";
+            c.appendChild(label);
+            var buttons = c.querySelector(".email-actions");
+            if (buttons) {
+              buttons.style.display = "none";
+            }
+          };
+        }(card);
+
+        var skip = document.createElement("button");
+        skip.className = "btn-secondary";
+        skip.type = "button";
+        skip.textContent = "Skip";
+        skip.onclick = function(c) {
+          return function() {
+            c.style.display = "none";
+          };
+        }(card);
+
+        actions.appendChild(approve);
+        actions.appendChild(skip);
+        card.appendChild(actions);
+        box.appendChild(card);
+        i = i + 1;
+      }
+    }
+
+    function appendFeedLine(text) {
+      var feed = document.getElementById("feed");
+      feed.className = "feed visible";
+      var lines = document.getElementById("feedLines");
+      var row = document.createElement("div");
+      row.className = "feed-line";
+      var icon = document.createElement("div");
+      icon.className = "feed-icon";
+      var label = document.createElement("div");
+      label.textContent = text;
+      row.appendChild(icon);
+      row.appendChild(label);
+      lines.appendChild(row);
+      feed.scrollTop = feed.scrollHeight;
+    }
+
+    function resetFeed() {
+      shownEventCount = 0;
+      document.getElementById("feedLines").innerHTML = "";
+      document.getElementById("feed").className = "feed visible";
+      document.getElementById("learnBanner").className = "banner";
+    }
+
+    function diffStatuses(previous, current) {
+      var changed = [];
+      var improved = 0;
+      if (!previous || !previous.nodes || !current || !current.nodes) {
+        return { changed: changed, improved: improved };
+      }
+
+      var prevMap = {};
+      var i = 0;
+      while (i < previous.nodes.length) {
+        prevMap[previous.nodes[i].id] = normalizeStatus(previous.nodes[i].status);
+        i = i + 1;
+      }
+
+      i = 0;
+      while (i < current.nodes.length) {
+        var node = current.nodes[i];
+        var id = node.id;
+        var now = normalizeStatus(node.status);
+        if (prevMap[id] && prevMap[id] !== now) {
+          changed.push(id);
+          if ((prevMap[id] === "broken" || prevMap[id] === "risk") && (now === "fine" || now === "risk" && prevMap[id] === "broken")) {
+            improved = improved + 1;
+          }
+          if ((prevMap[id] === "broken" || prevMap[id] === "risk") && now === "fine") {
+            // already counted above for fine; risk->fine also counts
+          }
+        }
+        i = i + 1;
+      }
+
+      // recount improved cleanly
+      improved = 0;
+      i = 0;
+      while (i < changed.length) {
+        var cid = changed[i];
+        var before = prevMap[cid];
+        var after = null;
+        var j = 0;
+        while (j < current.nodes.length) {
+          if (current.nodes[j].id === cid) {
+            after = normalizeStatus(current.nodes[j].status);
+          }
+          j = j + 1;
+        }
+        if ((before === "broken" || before === "risk") && after === "fine") {
+          improved = improved + 1;
+        }
+        if (before === "broken" && after === "risk") {
+          improved = improved + 1;
+        }
+        i = i + 1;
+      }
+
+      return { changed: changed, improved: improved };
+    }
+
+    function showLearnBanner(improved) {
+      var banner = document.getElementById("learnBanner");
+      if (improved > 0) {
+        banner.textContent = "Learned: " + improved + " items no longer at risk";
+        banner.className = "banner visible";
+      }
+    }
+
+    function applyResult(data) {
+      lastGraph = data.graph;
+      lastPrevious = data.previous;
+      var diff = diffStatuses(data.previous, data.graph);
+      renderGraph(data.graph, diff.changed);
+      renderVerdict(data.graph);
+      renderEmails(data.emails || []);
+      if (diff.improved > 0) {
+        showLearnBanner(diff.improved);
+      }
+    }
+
+    async function pollEvents() {
+      try {
+        var res = await fetch("/events");
+        var data = await res.json();
+        var events = data.events || [];
+        while (shownEventCount < events.length) {
+          appendFeedLine(events[shownEventCount]);
+          shownEventCount = shownEventCount + 1;
+        }
+        if (data.done) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+          document.getElementById("runBtn").disabled = false;
+          document.getElementById("teachBtn").disabled = false;
+          var resultRes = await fetch("/result");
+          var result = await resultRes.json();
+          applyResult(result);
+        }
+      } catch (err) {
+        appendFeedLine("Poll error: " + err);
+      }
+    }
+
+    async function startRun(message) {
+      if (!message || message.trim() === "") {
+        return;
+      }
+      document.getElementById("runBtn").disabled = true;
+      document.getElementById("teachBtn").disabled = true;
+      resetFeed();
+      appendFeedLine("Queued: " + message);
+
+      if (!USE_LIVE) {
+        // Demo mode with hardcoded sample until live wiring is confirmed
+        setTimeout(function() {
+          appendFeedLine("Checking flight AS 331");
+        }, 300);
+        setTimeout(function() {
+          appendFeedLine("Recall: what is on Thursday?");
+        }, 700);
+        setTimeout(function() {
+          appendFeedLine("Found: Northwind walkthrough (email)");
+        }, 1100);
+        setTimeout(function() {
+          appendFeedLine("Saving blast radius report");
+          applyResult({ graph: SAMPLE, previous: null, emails: SAMPLE_EMAILS });
+          document.getElementById("runBtn").disabled = false;
+          document.getElementById("teachBtn").disabled = false;
+        }, 1600);
+        return;
+      }
+
+      var res = await fetch("/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: message })
+      });
+      var payload = await res.json();
+      if (!payload.ok) {
+        appendFeedLine("Could not start: " + (payload.error || "unknown"));
+        document.getElementById("runBtn").disabled = false;
+        document.getElementById("teachBtn").disabled = false;
+        return;
+      }
+      pollTimer = setInterval(pollEvents, 700);
+    }
+
+    document.getElementById("runBtn").onclick = function() {
+      startRun(document.getElementById("trigger").value);
+    };
+
+    document.getElementById("teachBtn").onclick = function() {
+      var correction = document.getElementById("correction").value;
+      if (correction.trim() === "") {
+        return;
+      }
+      startRun(correction);
+    };
+
+    document.getElementById("resetBtn").onclick = async function() {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      document.getElementById("resetBtn").disabled = true;
+      try {
+        var res = await fetch("/reset", { method: "POST" });
+        var payload = await res.json();
+        if (!payload.ok) {
+          appendFeedLine("Reset failed: " + (payload.error || "unknown"));
+          document.getElementById("resetBtn").disabled = false;
+          return;
+        }
+        document.getElementById("feedLines").innerHTML = "";
+        document.getElementById("feed").className = "feed";
+        document.getElementById("learnBanner").className = "banner";
+        document.getElementById("correction").value = "";
+        document.getElementById("trigger").value = "My Thursday flight AS 331 is delayed 5 hours. What breaks?";
+        document.getElementById("nodeDetail").className = "side-detail";
+        lastGraph = null;
+        lastPrevious = null;
+        shownEventCount = 0;
+        applyResult({ graph: SAMPLE, previous: null, emails: SAMPLE_EMAILS });
+        document.getElementById("runBtn").disabled = false;
+        document.getElementById("teachBtn").disabled = false;
+      } catch (err) {
+        appendFeedLine("Reset error: " + err);
+      }
+      document.getElementById("resetBtn").disabled = false;
+    };
+
+    var chips = document.querySelectorAll(".chip");
+    var c = 0;
+    while (c < chips.length) {
+      chips[c].onclick = function(btn) {
+        return function() {
+          document.getElementById("trigger").value = btn.getAttribute("data-q");
+          startRun(btn.getAttribute("data-q"));
+        };
+      }(chips[c]);
+      c = c + 1;
+    }
+
+    initCy();
+    applyResult({ graph: SAMPLE, previous: null, emails: SAMPLE_EMAILS });
+  </script>
+</body>
+</html>

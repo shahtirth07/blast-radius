@@ -1,0 +1,11 @@
+From: Priya Nair <priya@acme.example>
+To: Maya Chen <maya@lumenlabs.example>
+Date: 2026-09-17T09:10
+Subject: Monday demo
+
+Hi Maya,
+
+Looking forward to Monday at 11. The only thing our team really needs to see is the new CSV export.
+If export isn't ready, let's move the demo so we don't waste the exec team's time.
+
+Priya

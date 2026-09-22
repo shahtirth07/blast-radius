@@ -1,0 +1,8 @@
+cognee
+strands-agents[anthropic]
+strands-agents-tools
+python-dotenv
+requests
+streamlit
+fastapi
+uvicorn
