@@ -1,0 +1,3 @@
+# DM: Raj Patel and Maya Chen
+[raj@lumenlabs.example, 2026-09-21T15:30] Can you review the export PR by Thursday 3pm? If it's not merged Thursday, QA can't finish and I can't ship Friday.
+[maya@lumenlabs.example, 2026-09-21T15:34] Yes, I'll review it Thursday after the Northwind walkthrough.

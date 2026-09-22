@@ -1,0 +1,4 @@
+# #release
+[raj@lumenlabs.example, 2026-09-21T14:02] v2.4 go/no-go is Friday 10am. Maya has to sign off before we ship.
+[raj@lumenlabs.example, 2026-09-21T14:03] The CSV export feature is in v2.4. Acme's Monday demo depends on it.
+[lena@lumenlabs.example, 2026-09-21T14:10] QA is ready once the export PR is merged.

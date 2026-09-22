@@ -1,0 +1,12 @@
+From: Dana Ortiz <dana@northwind.example>
+To: Maya Chen <maya@lumenlabs.example>
+Date: 2026-09-18T11:20
+Subject: Contract signing depends on Thursday walkthrough
+
+Hi Maya,
+
+Our security team needs the in-person walkthrough on Thursday at 1pm before I can sign.
+To keep the Q3 pricing, the contract has to be signed by Friday, September 25 end of day.
+If the walkthrough slips, legal will push signing into October and the pricing resets.
+
+Dana

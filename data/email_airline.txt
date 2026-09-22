@@ -1,0 +1,8 @@
+From: Alaska Airlines <noreply@alaskaair.example>
+To: Maya Chen <maya@lumenlabs.example>
+Date: 2026-09-10T20:02
+Subject: Booking confirmed
+
+Outbound: AS 331, Thu Sep 24, SFO 07:05 to SEA 09:15
+Return: AS 348, Thu Sep 24, SEA 18:10 to SFO 20:20
+Passenger: Maya Chen
